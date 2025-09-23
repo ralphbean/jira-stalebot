@@ -4,20 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a JIRA stale issue management toolkit consisting of three complementary scripts:
+This is a JIRA stale issue management toolkit consisting of four complementary scripts:
 
 1. **`jira-stale-checker.py`** - Analyzes issue changelogs to identify staleness based on meaningful update history
 2. **`jira-add-label.py`** - Simple utility to add labels to JIRA issues
-3. **`jira-transition-issue.py`** - Transitions issues through workflow states
+3. **`jira-add-comment.py`** - Simple utility to add comments to JIRA issues
+4. **`jira-transition-issue.py`** - Transitions issues through workflow states
 
-The toolkit enables a complete stale issue management workflow: identify stale issues → label them → provide grace period → close unaddressed issues.
+The toolkit enables a complete stale issue management workflow: identify stale issues → label them → notify stakeholders → provide grace period → close unaddressed issues.
 
 ## Development Setup
 
 Dependencies are managed via requirements.txt:
 - `python -m pip install -r requirements.txt` - Install dependencies (jira, requests, python-dateutil)
 - All scripts use the same authentication pattern and environment variables
-- Scripts: `jira-stale-checker.py`, `jira-add-label.py`, `jira-transition-issue.py`
+- Scripts: `jira-stale-checker.py`, `jira-add-label.py`, `jira-add-comment.py`, `jira-transition-issue.py`
 
 ## Core Functionality
 
@@ -51,6 +52,13 @@ The main analysis tool provides sophisticated filtering capabilities:
 Simple utility for adding labels to issues:
 - Idempotent operation (won't add duplicate labels)
 - Preserves existing labels
+- Clear success/failure feedback
+- Same authentication pattern as other scripts
+
+### jira-add-comment.py
+Simple utility for adding comments to issues:
+- Validates issue exists before adding comment
+- Supports multi-line comments
 - Clear success/failure feedback
 - Same authentication pattern as other scripts
 
@@ -96,6 +104,9 @@ python jira-stale-checker.py "project = MYPROJ AND status != Done" \
 # Issue labeling
 python jira-add-label.py PROJ-123 "stale"
 
+# Issue commenting
+python jira-add-comment.py PROJ-123 "This issue appears to be stale."
+
 # Issue transitions
 python jira-transition-issue.py PROJ-123 "Close Issue"
 python jira-transition-issue.py PROJ-123 --list-transitions
@@ -114,6 +125,7 @@ jq -r '.[].key' | \
 while read issue; do
   echo "Labeling $issue as stale..."
   python jira-add-label.py "$issue" "stale"
+  python jira-add-comment.py "$issue" "This issue has been automatically labeled as stale due to 6+ months of inactivity. If still relevant, please update within 2-4 weeks or it will be closed."
 done
 
 # Phase 2: Grace period - notify teams, send reports, etc.
