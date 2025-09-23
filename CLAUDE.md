@@ -4,17 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a JIRA stale issue analysis tool that provides intelligent filtering of JIRA issues based on their meaningful update history. The main script `jira-stale-checker.py` analyzes JIRA issue changelogs to determine when issues were last meaningfully updated, while allowing comprehensive filtering of automated/noise changes.
+This is a JIRA stale issue management toolkit consisting of three complementary scripts:
+
+1. **`jira-stale-checker.py`** - Analyzes issue changelogs to identify staleness based on meaningful update history
+2. **`jira-add-label.py`** - Simple utility to add labels to JIRA issues
+3. **`jira-transition-issue.py`** - Transitions issues through workflow states
+
+The toolkit enables a complete stale issue management workflow: identify stale issues → label them → provide grace period → close unaddressed issues.
 
 ## Development Setup
 
 Dependencies are managed via requirements.txt:
 - `python -m pip install -r requirements.txt` - Install dependencies (jira, requests, python-dateutil)
-- Main script: `jira-stale-checker.py`
+- All scripts use the same authentication pattern and environment variables
+- Scripts: `jira-stale-checker.py`, `jira-add-label.py`, `jira-transition-issue.py`
 
 ## Core Functionality
 
-The script provides sophisticated filtering capabilities:
+### jira-stale-checker.py
+The main analysis tool provides sophisticated filtering capabilities:
 
 ### Authentication
 - Uses JIRA personal access tokens (not basic auth)
@@ -39,6 +47,21 @@ The script provides sophisticated filtering capabilities:
 - Table (default), JSON, CSV formats
 - Debug mode with detailed changelog analysis
 
+### jira-add-label.py
+Simple utility for adding labels to issues:
+- Idempotent operation (won't add duplicate labels)
+- Preserves existing labels
+- Clear success/failure feedback
+- Same authentication pattern as other scripts
+
+### jira-transition-issue.py
+Workflow transition management:
+- Case-insensitive transition name matching
+- Validation of available transitions
+- Before/after status reporting
+- Discovery mode with `--list-transitions`
+- Handles workflow complexity gracefully
+
 ## Key Design Decisions
 
 ### Meaningful Update Detection
@@ -62,17 +85,66 @@ The core algorithm analyzes JIRA changelog history to find the most recent "mean
 
 ## Common Usage Patterns
 
+### Individual Script Usage
 ```bash
-# Find stale issues (no meaningful updates in 3 months, ignoring bot changes)
+# Stale issue analysis
 python jira-stale-checker.py "project = MYPROJ AND status != Done" \
   --exclude-field "Comment" \
   --exclude-user "automation-bot" \
   --before "3 months ago"
 
-# Recent activity analysis (last 2 weeks, excluding sprint changes)
-python jira-stale-checker.py "assignee = currentUser()" \
-  --exclude-field "Sprint" \
-  --since "2 weeks ago" \
+# Issue labeling
+python jira-add-label.py PROJ-123 "stale"
+
+# Issue transitions
+python jira-transition-issue.py PROJ-123 "Close Issue"
+python jira-transition-issue.py PROJ-123 --list-transitions
+```
+
+### Complete Stale Issue Management Workflow
+```bash
+# Phase 1: Identify and label stale issues (6+ months without meaningful updates)
+python jira-stale-checker.py "project = MYPROJ AND status != Done" \
+  --exclude-field "Comment" \
+  --exclude-field "Work Log" \
+  --exclude-user "automation-bot" \
+  --before "6 months ago" \
+  --format json | \
+jq -r '.[].key' | \
+while read issue; do
+  echo "Labeling $issue as stale..."
+  python jira-add-label.py "$issue" "stale"
+done
+
+# Phase 2: Grace period - notify teams, send reports, etc.
+# (Allow 2-4 weeks for teams to respond to stale labels)
+
+# Phase 3: Close issues that remain stale after grace period
+python jira-stale-checker.py "project = MYPROJ AND labels = stale" \
+  --before "2 weeks ago" \
+  --format json | \
+jq -r '.[].key' | \
+while read issue; do
+  echo "Closing stale issue $issue..."
+  python jira-transition-issue.py "$issue" "Close Issue"
+done
+```
+
+### Advanced Filtering Examples
+```bash
+# Find issues stale despite recent comments (exclude only automation)
+python jira-stale-checker.py "project = MYPROJ" \
+  --exclude-user "jenkins" \
+  --exclude-user "github-bot" \
+  --before "3 months ago"
+
+# Identify issues with recent automation but no human activity
+python jira-stale-checker.py "project = MYPROJ" \
+  --exclude-field "Comment" \
+  --exclude-field "Attachment" \
+  --exclude-user "automation-bot" \
+  --exclude-user "ci-system" \
+  --before "1 month ago" \
   --debug
 ```
 
