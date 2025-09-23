@@ -36,7 +36,6 @@ class JiraStaleChecker:
     def __init__(self, server: str, token: str):
         """Initialize JIRA connection using personal access token."""
         self.jira = JIRA(server=server, token_auth=token)
-        self._field_mapping = None  # Cache for field name to ID mapping
 
     def get_issues_with_history(self, jql: str, exclude_fields: List[str], exclude_users: List[str] = None) -> List[Dict[str, Any]]:
         """
@@ -52,8 +51,7 @@ class JiraStaleChecker:
         """
         debug_print(f"Executing JQL query: {jql}")
 
-        # Resolve field names to proper identifiers
-        resolved_exclude_fields = self._resolve_field_identifiers(exclude_fields)
+        # Use field names directly - changelog entries use field names, not IDs
         exclude_users = exclude_users or []
 
         # Get issues from JQL query
@@ -65,7 +63,7 @@ class JiraStaleChecker:
 
         for i, issue in enumerate(issues, 1):
             debug_print(f"Processing issue {i}/{len(issues)}: {issue.key}")
-            last_meaningful_update = self._get_last_meaningful_update(issue, resolved_exclude_fields, exclude_users)
+            last_meaningful_update = self._get_last_meaningful_update(issue, exclude_fields, exclude_users)
 
             results.append({
                 'key': issue.key,
@@ -149,112 +147,6 @@ class JiraStaleChecker:
         debug_print(f"  Final last meaningful update: {last_update.isoformat()}")
 
         return last_update.isoformat()
-
-    def _get_field_mapping(self) -> Dict[str, str]:
-        """
-        Get mapping of field names to field IDs.
-
-        Returns:
-            Dictionary mapping field names (and aliases) to field IDs
-        """
-        if self._field_mapping is not None:
-            debug_print("Using cached field mapping")
-            return self._field_mapping
-
-        debug_print("Fetching field mapping from JIRA API...")
-        self._field_mapping = {}
-
-        try:
-            # Get all fields from JIRA
-            fields = self.jira.fields()
-            debug_print(f"Retrieved {len(fields)} fields from JIRA")
-
-            custom_field_count = 0
-            for field in fields:
-                field_id = field['id']
-                field_name = field['name']
-
-                # Map both the exact name and lowercased version
-                self._field_mapping[field_name] = field_id
-                self._field_mapping[field_name.lower()] = field_id
-
-                # For custom fields, also map by ID (in case user provides the ID directly)
-                if field_id.startswith('customfield_'):
-                    self._field_mapping[field_id] = field_id
-                    custom_field_count += 1
-
-            debug_print(f"Mapped {len(fields)} total fields ({custom_field_count} custom fields)")
-
-        except Exception as e:
-            print(f"Warning: Could not fetch field mapping: {e}")
-            self._field_mapping = {}
-
-        return self._field_mapping
-
-    def _resolve_field_identifiers(self, exclude_fields: List[str]) -> List[str]:
-        """
-        Convert user-provided field names to the identifiers used in changelog.
-
-        Args:
-            exclude_fields: List of field names provided by user
-
-        Returns:
-            List of field identifiers that can be compared against changelog items
-        """
-        debug_print(f"Resolving {len(exclude_fields)} field identifiers: {exclude_fields}")
-        field_mapping = self._get_field_mapping()
-        resolved_fields = []
-        invalid_fields = []
-
-        for field in exclude_fields:
-            debug_print(f"  Resolving field: '{field}'")
-            # Try exact match first
-            if field in field_mapping:
-                resolved_id = field_mapping[field]
-                resolved_fields.append(resolved_id)
-                debug_print(f"    → Exact match: {resolved_id}")
-            # Try case-insensitive match
-            elif field.lower() in field_mapping:
-                resolved_id = field_mapping[field.lower()]
-                resolved_fields.append(resolved_id)
-                debug_print(f"    → Case-insensitive match: {resolved_id}")
-            # If it's already a field ID, keep it as-is
-            elif field.startswith('customfield_'):
-                resolved_fields.append(field)
-                debug_print(f"    → Already a field ID: {field}")
-            # Try to match standard field names (case-insensitive)
-            else:
-                # Some common field mappings for standard fields
-                standard_fields = {
-                    'summary': 'summary',
-                    'description': 'description',
-                    'status': 'status',
-                    'assignee': 'assignee',
-                    'reporter': 'reporter',
-                    'priority': 'priority',
-                    'resolution': 'resolution',
-                    'labels': 'labels',
-                    'comment': 'comment',
-                    'attachment': 'attachment',
-                    'worklog': 'worklog',
-                    'work log': 'worklog',
-                    'link': 'issuelinks'
-                }
-
-                field_lower = field.lower()
-                if field_lower in standard_fields:
-                    resolved_fields.append(standard_fields[field_lower])
-                    debug_print(f"    → Standard field match: {standard_fields[field_lower]}")
-                else:
-                    invalid_fields.append(field)
-                    debug_print(f"    → No match found for: {field}")
-
-        if invalid_fields:
-            print(f"Warning: Could not resolve the following fields: {', '.join(invalid_fields)}")
-            print("Available custom fields can be listed by examining JIRA field configuration")
-
-        debug_print(f"Final resolved fields: {resolved_fields}")
-        return resolved_fields
 
 
 def parse_since_date(since_str: str) -> datetime:
@@ -395,11 +287,9 @@ def main():
     parser.add_argument('--token', help='JIRA personal access token',
                        default=os.environ.get('JIRA_TOKEN'))
     parser.add_argument('--exclude-field', action='append', dest='exclude_fields',
-                       help='Field to exclude from update consideration. Can be field name (e.g., "Story Points") or field ID (e.g., "customfield_10001"). Can be used multiple times.')
+                       help='Field name to exclude from update consideration (e.g., "Story Points", "Comment", "Sprint"). Can be used multiple times.')
     parser.add_argument('--format', choices=['json', 'table', 'csv'], default='table',
                        help='Output format')
-    parser.add_argument('--list-fields', action='store_true',
-                       help='List available fields and their IDs, then exit')
     parser.add_argument('--since', help='Only include issues with meaningful updates since this date. Accepts YYYY-MM-DD format or human-friendly formats like "4 weeks ago", "2 years ago"')
     parser.add_argument('--before', help='Only include issues with meaningful updates before this date. Accepts YYYY-MM-DD format or human-friendly formats like "4 weeks ago", "2 years ago"')
     parser.add_argument('--exclude-user', action='append', dest='exclude_users',
@@ -424,11 +314,6 @@ def main():
         checker = JiraStaleChecker(args.url, args.token)
         debug_print("JIRA connection established")
 
-        # Handle --list-fields option
-        if args.list_fields:
-            debug_print("Listing available fields...")
-            _list_available_fields(checker)
-            sys.exit(0)
 
         exclude_fields = args.exclude_fields or []
         exclude_users = args.exclude_users or []
@@ -504,57 +389,6 @@ def _output_csv(issues: List[Dict[str, Any]]):
     print(output.getvalue())
 
 
-def _list_available_fields(checker: JiraStaleChecker):
-    """List all available fields and their IDs."""
-    try:
-        field_mapping = checker._get_field_mapping()
-        if not field_mapping:
-            print("No fields found or unable to fetch field information.")
-            return
-
-        # Group fields by type
-        standard_fields = []
-        custom_fields = []
-
-        # Get unique field entries (avoid duplicates from case-insensitive mapping)
-        seen_ids = set()
-        for name, field_id in field_mapping.items():
-            if field_id in seen_ids:
-                continue
-            seen_ids.add(field_id)
-
-            if field_id.startswith('customfield_'):
-                custom_fields.append((name, field_id))
-            else:
-                standard_fields.append((name, field_id))
-
-        print("Available JIRA Fields:")
-        print("=" * 50)
-
-        if standard_fields:
-            print("\nStandard Fields:")
-            print("-" * 30)
-            for name, field_id in sorted(standard_fields):
-                if name.lower() != name:  # Only show the properly cased version
-                    print(f"  {name:<25} ({field_id})")
-
-        if custom_fields:
-            print(f"\nCustom Fields ({len(custom_fields)} total):")
-            print("-" * 30)
-            for name, field_id in sorted(custom_fields):
-                if name.lower() != name:  # Only show the properly cased version
-                    print(f"  {name:<25} ({field_id})")
-
-        print(f"\nUsage examples:")
-        print(f"  --exclude-field \"Comment\"")
-        print(f"  --exclude-field \"Story Points\"")
-        print(f"  --exclude-field \"customfield_10001\"")
-        print(f"  --exclude-user \"automation-bot\"")
-        print(f"\nNote: All matching issues will be processed and returned.")
-        print(f"Use more specific JQL queries to reduce the result set if needed.")
-
-    except Exception as e:
-        print(f"Error listing fields: {e}")
 
 
 if __name__ == '__main__':

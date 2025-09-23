@@ -30,9 +30,9 @@ The main analysis tool provides sophisticated filtering capabilities:
 - Configured via environment variables: `JIRA_URL` and `JIRA_TOKEN`
 
 ### Field Resolution
-- Automatically maps custom field names to internal IDs
-- Supports both field names ("Story Points") and field IDs ("customfield_10001")
-- Built-in field mapping cache for performance
+- Uses field names directly as they appear in JIRA changelog entries
+- Supports field names like "Story Points", "Comment", "Sprint", etc.
+- Simplified approach without internal ID mapping for better reliability
 
 ### Filtering Options
 - **Field exclusions**: `--exclude-field` - Ignore updates to specific fields (comments, automated fields, etc.)
@@ -83,12 +83,12 @@ The core algorithm analyzes JIRA changelog history to find the most recent "mean
 ### Performance Characteristics
 - Processes ALL matching issues to ensure accurate sorting (no early JIRA API limits)
 - Uses changelog expansion which is API-intensive but necessary for accuracy
-- Field mapping is cached per script execution
+- Direct field name matching without caching overhead
 - No database persistence - pure API-based analysis
 
 ### Error Handling
 - Comprehensive date parsing with clear error messages
-- Field resolution warnings for unrecognized field names
+- Direct field name matching reduces field resolution complexity
 - Timezone-aware datetime handling to prevent comparison errors
 
 ## Common Usage Patterns
