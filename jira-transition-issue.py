@@ -16,7 +16,7 @@ except ImportError:
     sys.exit(1)
 
 
-def transition_issue(server: str, token: str, issue_key: str, transition_name: str):
+def transition_issue(server: str, token: str, issue_key: str, transition_name: str, resolution: str = None):
     """
     Transition a JIRA issue through a specified transition.
 
@@ -25,6 +25,7 @@ def transition_issue(server: str, token: str, issue_key: str, transition_name: s
         token: JIRA personal access token
         issue_key: The issue key (e.g., "PROJ-123")
         transition_name: The name of the transition to execute
+        resolution: Optional resolution to set during transition
     """
     try:
         # Initialize JIRA connection
@@ -51,12 +52,20 @@ def transition_issue(server: str, token: str, issue_key: str, transition_name: s
                 print(f"  - {transition['name']}")
             sys.exit(1)
 
+        # Prepare transition fields
+        fields = {}
+        if resolution:
+            fields['resolution'] = {'name': resolution}
+
         # Execute the transition
-        jira.transition_issue(issue, target_transition['id'])
+        jira.transition_issue(issue, target_transition['id'], fields=fields if fields else None)
 
         # Get updated issue status
         updated_issue = jira.issue(issue_key)
-        print(f"Successfully transitioned {issue_key} via '{transition_name}' to: {updated_issue.fields.status.name}")
+        success_msg = f"Successfully transitioned {issue_key} via '{transition_name}' to: {updated_issue.fields.status.name}"
+        if resolution:
+            success_msg += f" with resolution: {resolution}"
+        print(success_msg)
 
     except Exception as e:
         print(f"Error transitioning issue {issue_key}: {e}")
@@ -106,6 +115,7 @@ def main():
                        default=os.environ.get('JIRA_TOKEN'))
     parser.add_argument('--list-transitions', action='store_true',
                        help='List available transitions for the issue and exit')
+    parser.add_argument('--resolution', help='Resolution to set during transition (e.g., "Fixed", "Won\'t Fix", "Duplicate")')
 
     args = parser.parse_args()
 
@@ -126,7 +136,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    transition_issue(args.url, args.token, args.issue_key, args.transition_name)
+    transition_issue(args.url, args.token, args.issue_key, args.transition_name, args.resolution)
 
 
 if __name__ == '__main__':

@@ -68,6 +68,7 @@ Workflow transition management:
 - Validation of available transitions
 - Before/after status reporting
 - Discovery mode with `--list-transitions`
+- Optional resolution setting with `--resolution`
 - Handles workflow complexity gracefully
 
 ## Key Design Decisions
@@ -109,6 +110,7 @@ python jira-add-comment.py PROJ-123 "This issue appears to be stale."
 
 # Issue transitions
 python jira-transition-issue.py PROJ-123 "Close Issue"
+python jira-transition-issue.py PROJ-123 "Close Issue" --resolution "Fixed"
 python jira-transition-issue.py PROJ-123 --list-transitions
 ```
 
@@ -138,7 +140,7 @@ python jira-stale-checker.py "project = MYPROJ AND labels = stale" \
 jq -r '.[].key' | \
 while read issue; do
   echo "Closing stale issue $issue..."
-  python jira-transition-issue.py "$issue" "Close Issue"
+  python jira-transition-issue.py "$issue" "Close Issue" --resolution "Won't Fix"
 done
 ```
 
